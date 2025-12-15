@@ -51,15 +51,15 @@ class KonsultasiResource extends Resource
                     ->visibleOn(['edit']),
             ]);
     }
-
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('nama_lengkap')->searchable(),
+                Tables\Columns\TextColumn::make('nama_lengkap')
+                    ->searchable(),
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
+                    ->color(fn(string $state): string => match ($state) {
                         'pending' => 'warning',
                         'diterima' => 'success',
                         'dijadwal_ulang' => 'info',
@@ -78,11 +78,11 @@ class KonsultasiResource extends Resource
                         return $query
                             ->when(
                                 $data['dari'],
-                                fn (Builder $query, $date): Builder => $query->whereDate('tanggal_diajukan', '>=', $date),
+                                fn(Builder $query, $date): Builder => $query->whereDate('tanggal_diajukan', '>=', $date),
                             )
                             ->when(
                                 $data['sampai'],
-                                fn (Builder $query, $date): Builder => $query->whereDate('tanggal_diajukan', '<=', $date),
+                                fn(Builder $query, $date): Builder => $query->whereDate('tanggal_diajukan', '<=', $date),
                             );
                     }),
             ])
@@ -127,40 +127,42 @@ class KonsultasiResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
+
                 Tables\Actions\Action::make('assign')
                     ->label('Assign')
-                    ->visible(fn (): bool => Auth::user()->role === 'super_admin')
+                    ->visible(fn(): bool => Auth::user()->role === 'super_admin')
                     ->form([
                         Forms\Components\Select::make('admin_id')
                             ->label('Pilih Admin')
-                            ->options(fn () => User::where('role', 'admin')->pluck('name', 'id'))
+                            ->options(fn() => User::where('role', 'admin')->pluck('name', 'id'))
                             ->required(),
                     ])
                     ->action(function (array $data, Konsultasi $record): void {
                         $record->assigned_to_admin_id = $data['admin_id'];
                         $record->save();
                     }),
+
                 Tables\Actions\Action::make('terima')
                     ->label('Terima')
-                    ->visible(fn (Konsultasi $record): bool => Auth::user()->role === 'admin' && $record->assigned_to_admin_id === Auth::id() && $record->status === 'pending')
+                    ->visible(fn(Konsultasi $record): bool => Auth::user()->role === 'admin' && $record->assigned_to_admin_id === Auth::id() && $record->status === 'pending')
                     ->requiresConfirmation()
                     ->action(function (Konsultasi $record): void {
                         $record->status = 'diterima';
                         $record->save();
 
-                        // Gunakan jadwal baru jika ada, jika tidak gunakan jadwal awal
                         $tanggalTampil = $record->tanggal_baru ?? $record->tanggal_diajukan;
                         $jamTampil = $record->jam_baru ?? $record->jam_diajukan;
 
-                        // Format tanggal dengan Carbon untuk keamanan
-                        $templateTerima = "Halo *$record->nama_lengkap*,\n\nKonsultasi Anda telah **diterima**.\n\nBerikut detail jadwalnya:\nTanggal: " . Carbon::parse($tanggalTampil)->format('d F Y') . "\nJam: " . $jamTampil . " WIB.\n\nTerima kasih.";
+                        $templateTerima = "Halo *{$record->nama_lengkap}*,\n\nKonsultasi Anda telah **diterima**.\n\nBerikut detail jadwalnya:\nTanggal: " . Carbon::parse($tanggalTampil)->format('d F Y') . "\nJam: " . $jamTampil . " WIB.\n\nTerima kasih.";
 
+                        /** @var WhatsAppService $waService */
                         $waService = app(WhatsAppService::class);
-                        $waService->kirimPesan($record->nomor_whatsapp, $templateTerima);
+                        $waService->kirim_pesan($record->nomor_whatsapp, $templateTerima, $record->id);
                     }),
+
                 Tables\Actions\Action::make('reschedule')
                     ->label('Reschedule')
-                    ->visible(fn (Konsultasi $record): bool => Auth::user()->role === 'admin' && $record->assigned_to_admin_id === Auth::id() && $record->status === 'pending')
+                    ->visible(fn(Konsultasi $record): bool => Auth::user()->role === 'admin' && $record->assigned_to_admin_id === Auth::id() && $record->status === 'pending')
                     ->requiresConfirmation()
                     ->form([
                         Forms\Components\DatePicker::make('tanggal_baru')->required(),
@@ -172,11 +174,10 @@ class KonsultasiResource extends Resource
                         $record->jam_baru = $data['jam_baru'];
                         $record->save();
 
-                        // Format tanggal baru
-                        $templateReschedule = "Halo *$record->nama_lengkap*,\n\nKonsultasi Anda telah **dijadwal ulang**.\n\nBerikut detail jadwal baru Anda:\nTanggal: " . Carbon::parse($data['tanggal_baru'])->format('d F Y') . "\nJam: " . $data['jam_baru'] . " WIB.\n\nMohon periksa kembali jadwal Anda. Terima kasih.";
+                        $pesan = "Halo *{$record->nama_lengkap}*,\n\nKonsultasi Anda telah dijadwal ulang.\n\nTanggal baru: " . Carbon::parse($data['tanggal_baru'])->format('d F Y') . "\nJam baru: {$data['jam_baru']} WIB.\n\nMohon periksa kembali jadwal Anda.";
 
                         $waService = app(WhatsAppService::class);
-                        $waService->kirimPesan($record->nomor_whatsapp, $templateReschedule);
+                        $waService->kirim_pesan($record->nomor_whatsapp, $pesan, $record->id);
                     }),
             ])
             ->bulkActions([
@@ -185,6 +186,8 @@ class KonsultasiResource extends Resource
                 ]),
             ]);
     }
+
+
 
     public static function getPages(): array
     {

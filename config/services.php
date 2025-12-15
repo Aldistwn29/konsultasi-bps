@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'whatsapp' => [
+        'node_url' => env('WHATSAPP_NODE_URL', 'http://127.0.0.1:3000'),
+    ],
+
 ];

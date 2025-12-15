@@ -2,39 +2,43 @@
 
 namespace App\Services;
 
-use GuzzleHttp\Client;
-use Illuminate\Support\Facades\Log;
+use App\Models\WhatsappMessage;
+use Illuminate\Support\Facades\Http;
 
 class WhatsAppService
 {
-    protected Client $client;
+    protected string $endpoint;
 
     public function __construct()
     {
-        $this->client = new Client([
-            'base_uri' => 'https://api.fonnte.com/'
-        ]);
+        $this->endpoint = config('services.whatsapp.node_url');
     }
-    
-    public function kirimPesan(string $nomor, string $pesan)
-    {
-        try {
-            $response = $this->client->post("send", [
-                 'headers' => [
-                    'Authorization' => env('FONNTE_API_KEY'),
-                ],
-                'form_params' => [
-                    'target' => $nomor,
-                    'message' => $pesan,
-                    'device' => env('FONNTE_INSTANCE_ID'),
-                ],
-            ]);
 
-            $result = json_decode($response->getBody()->getContents(), true);
-            return $result['status'] ?? false;
-        } catch (\Throwable $e) {
-            Log::error('Gagal kirim pesan whastapp via fonte: '. $e->getMessage());
-            return false;
-        }
+    public function kirim_pesan(string $nomor, string $pesan, ?int $konsultasiId = null): bool
+    {
+        $response = Http::post($this->endpoint . '/send-wa', [
+            'number' => $this->formatNomor($nomor),
+            'message' => $pesan
+        ]);
+
+        // simpan log
+        WhatsappMessage::create([
+            'konsultasi_id' => $konsultasiId,
+            'sender' => $this->formatNomor($nomor),
+            'message' => $pesan,
+            'direction' => 'out',
+        ]);
+
+        return $response->successful();
+    }
+
+
+    public function formatNomor(string $nomer): string
+    {
+        if (str_starts_with($nomer, '08')) {
+            return '62' . substr($nomer, 1);
+        };
+
+        return $nomer;
     }
 }
